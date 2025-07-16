@@ -1,0 +1,11 @@
+body { background: #f4f4f4; font-family: sans-serif; margin: 0; padding: 0; }
+.container { max-width: 700px; margin: 2rem auto; padding: 1rem; background: #fff; border-radius: 8px; }
+h1 { text-align: center; }
+form label { display: block; margin-bottom: 1rem; }
+form input[type="text"],
+form input[type="password"],
+form input[type="file"] { width: 100%; padding: 0.5rem; }
+button { padding: 0.75rem 1.5rem; background: #007bff; border: none; color: #fff; border-radius: 4px; cursor: pointer; }
+button:hover { background: #0056b3; }
+hr { margin: 2rem 0; }
+.error { background: #ffe0e0; padding: 0.75rem; border: 1px solid #ffaaaa; border-radius: 4px; margin-bottom: 1rem; }

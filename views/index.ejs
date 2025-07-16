@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shopline Bulk Order Creator</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Shopline Bulk Order Creator</h1>
+
+    <% if (error) { %>
+      <div class="error"><%= error %></div>
+    <% } %>
+
+    <form action="/process" method="post" enctype="multipart/form-data">
+      <label>
+        Shopline Admin Token:
+        <input type="password" name="access_token" required>
+      </label>
+      <label>
+        Store Domain (e.g. yourstore.myshopline.com):
+        <input type="text" name="store_domain" required>
+      </label>
+      <label>
+        CSV File:
+        <input type="file" name="csv" accept=".csv" required>
+      </label>
+      <button type="submit">Run Bulk Orders</button>
+    </form>
+
+    <% if (summary) { %>
+      <hr>
+      <h2>Summary</h2>
+      <p>Total Rows: <%= summary.total %></p>
+      <p>Success: <%= summary.success %></p>
+      <p>Failed: <%= summary.failed %></p>
+      <p>Success Rate: <%= summary.rate %>%</p>
+
+      <% if (successful.length) { %>
+        <h3>Successful Orders</h3>
+        <ul>
+          <% successful.forEach(o => { %>
+            <li>Row <%= o.row %>: Order #<%= o.order_number %> (Email: <%= o.customer_email %>)</li>
+          <% }) %>
+        </ul>
+      <% } %>
+
+      <% if (failed.length) { %>
+        <h3>Failed Orders</h3>
+        <ul>
+          <% failed.forEach(f => { %>
+            <li>Row <%= f.row %>: <%= JSON.stringify(f.error) %> (Email: <%= f.customer_email %>)</li>
+          <% }) %>
+        </ul>
+      <% } %>
+    <% } %>
+  </div>
+</body>
+</html>
