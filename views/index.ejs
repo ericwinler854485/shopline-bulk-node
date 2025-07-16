@@ -4,57 +4,69 @@
   <meta charset="UTF-8">
   <title>Shopline Bulk Order Creator</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
   <div class="container">
-    <h1>Shopline Bulk Order Creator</h1>
-
+    <h1>Bulk Order Processor</h1>
     <% if (error) { %>
       <div class="error"><%= error %></div>
     <% } %>
-
-    <form action="/process" method="post" enctype="multipart/form-data">
-      <label>
-        Shopline Admin Token:
-        <input type="password" name="access_token" required>
-      </label>
-      <label>
-        Store Domain (e.g. yourstore.myshopline.com):
-        <input type="text" name="store_domain" required>
-      </label>
-      <label>
-        CSV File:
-        <input type="file" name="csv" accept=".csv" required>
-      </label>
-      <button type="submit">Run Bulk Orders</button>
+    <form id="uploadForm" action="/process" method="post" enctype="multipart/form-data">
+      <label>Admin Token:<input type="password" name="access_token" required></label>
+      <label>Store Domain:<input type="text" name="store_domain" placeholder="yourstore.myshopline.com" required></label>
+      <label>CSV File:<input type="file" name="csv" accept=".csv" required></label>
+      <button type="submit">Upload & Start</button>
     </form>
 
-    <% if (summary) { %>
-      <hr>
-      <h2>Summary</h2>
-      <p>Total Rows: <%= summary.total %></p>
-      <p>Success: <%= summary.success %></p>
-      <p>Failed: <%= summary.failed %></p>
-      <p>Success Rate: <%= summary.rate %>%</p>
+    <div id="controls" style="display:none">
+      <button id="btnStop">⏸️ Stop</button>
+      <button id="btnResume">▶️ Resume</button>
+    </div>
 
-      <% if (successful.length) { %>
-        <h3>Successful Orders</h3>
-        <ul>
-          <% successful.forEach(o => { %>
-            <li>Row <%= o.row %>: Order #<%= o.order_number %> (Email: <%= o.email %>)</li>
-          <% }) %>
-        </ul>
-      <% } %>
-
-      <% if (failed.length) { %>
-        <h3>Failed Orders</h3>
-        <ul>
-          <% failed.forEach(f => { %>
-            <li>Row <%= f.row %>: <%= JSON.stringify(f.error) %> (Email: <%= f.email %>)</li>
-          <% }) %>
-        </ul>
-      <% } %>
-    <% } %>
+    <div id="progress"><div></div></div>
+    <div id="logs"></div>
   </div>
+
+  <script>
+    const socket = io();
+    const logs = document.getElementById('logs');
+    const bar  = document.querySelector('#progress > div');
+    const controls = document.getElementById('controls');
+    let filename, token, domain;
+
+    function log(msg) {
+      logs.innerHTML += msg + '<br>';
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    document.getElementById('uploadForm').onsubmit = e => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      filename = document.querySelector('input[name="csv"]').files[0].name;
+      token    = form.get('access_token');
+      domain   = form.get('store_domain');
+      fetch('/process', { method:'POST', body: form })
+        .then(res => res.text())
+        .then(html => {
+          document.body.innerHTML = html;
+          controls.style.display = 'block';
+          socket.emit('start', { filename, access_token: token, store_domain: domain });
+        });
+    };
+
+    socket.on('log', log);
+    socket.on('progress', ({ current, total }) => {
+      bar.style.width = (current/total*100) + '%';
+    });
+    socket.on('done', () => {
+      controls.style.display = 'none';
+    });
+
+    document.getElementById('btnStop').onclick = () => socket.emit('stop');
+    document.getElementById('btnResume').onclick = () => {
+      socket.emit('start', { filename, access_token: token, store_domain: domain });
+    };
+  </script>
 </body>
 </html>
