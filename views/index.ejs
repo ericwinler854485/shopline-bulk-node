@@ -41,7 +41,7 @@
         <h3>Successful Orders</h3>
         <ul>
           <% successful.forEach(o => { %>
-            <li>Row <%= o.row %>: Order #<%= o.order_number %> (Email: <%= o.customer_email %>)</li>
+            <li>Row <%= o.row %>: Order #<%= o.order_number %> (Email: <%= o.email %>)</li>
           <% }) %>
         </ul>
       <% } %>
@@ -50,7 +50,7 @@
         <h3>Failed Orders</h3>
         <ul>
           <% failed.forEach(f => { %>
-            <li>Row <%= f.row %>: <%= JSON.stringify(f.error) %> (Email: <%= f.customer_email %>)</li>
+            <li>Row <%= f.row %>: <%= JSON.stringify(f.error) %> (Email: <%= f.email %>)</li>
           <% }) %>
         </ul>
       <% } %>

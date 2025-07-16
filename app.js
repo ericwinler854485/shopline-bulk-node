@@ -1,11 +1,11 @@
 // app.js
-const express     = require('express');
-const fileUpload  = require('express-fileupload');
-const csvParse    = require('csv-parse');
-const fs          = require('fs');
-const path        = require('path');
-const axios       = require('axios');
-const morgan      = require('morgan');
+const express       = require('express');
+const fileUpload    = require('express-fileupload');
+const { parse: csvParse } = require('csv-parse');
+const fs            = require('fs');
+const path          = require('path');
+const axios         = require('axios');
+const morgan        = require('morgan');
 const { promisify } = require('util');
 
 const app = express();
@@ -14,7 +14,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname,'views'));
 
-// Increase payload size if needed
+// handle file uploads up to 50 MB
 app.use(fileUpload({ limits: { fileSize: 50 * 1024 * 1024 } }));
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
@@ -26,32 +26,32 @@ function safeStr(value, def = '') {
 }
 
 app.get('/', (req, res) => {
-  res.render('index', { error: null, summary: null });
+  res.render('index', { error: null, summary: null, successful: [], failed: [] });
 });
 
 app.post('/process', async (req, res) => {
   try {
     const { access_token, store_domain } = req.body;
     if (!req.files?.csv || !access_token || !store_domain) {
-      return res.render('index', { error: 'All fields are required.', summary: null });
+      return res.render('index', { error: 'All fields are required.', summary: null, successful: [], failed: [] });
     }
 
-    // Save uploaded CSV
+    // Save CSV
     const csvFile = req.files.csv;
     const csvPath = path.join(UPLOAD_DIR, csvFile.name);
     await csvFile.mv(csvPath);
 
-    // Read and parse CSV
+    // Read & parse
     const fileContent = await promisify(fs.readFile)(csvPath, 'utf8');
-    const records = await promisify(csvParse)(fileContent, {
+    const records     = await promisify(csvParse)(fileContent, {
       columns: true,
       skip_empty_lines: true,
       trim: true
     });
 
-    // Prepare API client
+    // Shopline API client
     const apiBase = `https://${store_domain.replace(/^https?:\/\//,'')}/admin/openapi/v20251201`;
-    const client = axios.create({
+    const client  = axios.create({
       baseURL: apiBase,
       headers: {
         'Authorization': `Bearer ${access_token}`,
@@ -62,90 +62,88 @@ app.post('/process', async (req, res) => {
       timeout: 30000
     });
 
-    // Process each row
     const successful = [];
-    const failed = [];
+    const failed     = [];
 
     for (let i = 0; i < records.length; i++) {
       const row = records[i];
-      // Build order payload exactly as Python does...
+
+      // build customer, shipping, billing, line_items, etc...
       const customer = {
-        email: safeStr(row.customer_email),
+        email:      safeStr(row.customer_email),
         first_name: safeStr(row.customer_first_name),
-        last_name: safeStr(row.customer_last_name),
-        area_code: safeStr(row.customer_area_code, '+1')
+        last_name:  safeStr(row.customer_last_name),
+        area_code:  safeStr(row.customer_area_code, '+1'),
+        phone:      safeStr(row.customer_phone, '')
       };
-      if (row.customer_phone) customer.phone = safeStr(row.customer_phone);
 
       const ship = {
-        address1: safeStr(row.shipping_address1),
-        city: safeStr(row.shipping_city),
-        province: safeStr(row.shipping_state),
-        country: safeStr(row.shipping_country, 'United States'),
-        country_code: safeStr(row.shipping_country_code,'US'),
-        zip: safeStr(row.shipping_zip),
-        first_name: customer.first_name,
-        last_name: customer.last_name,
-        email: customer.email
+        address1:    safeStr(row.shipping_address1),
+        address2:    safeStr(row.shipping_address2),
+        city:        safeStr(row.shipping_city),
+        province:    safeStr(row.shipping_state),
+        country:     safeStr(row.shipping_country, 'United States'),
+        country_code:safeStr(row.shipping_country_code, 'US'),
+        zip:         safeStr(row.shipping_zip),
+        first_name:  customer.first_name,
+        last_name:   customer.last_name,
+        email:       customer.email,
+        phone:       customer.phone,
+        company:     safeStr(row.shipping_company, '')
       };
-      if (row.shipping_address2) ship.address2 = safeStr(row.shipping_address2);
-      if (row.shipping_company) ship.company = safeStr(row.shipping_company);
-      if (row.customer_phone) ship.phone = safeStr(row.customer_phone);
 
-      // Billing
       let billing = { ...ship, same_as_receiver: true };
       if (['yes','true','1'].includes(safeStr(row.billing_different).toLowerCase())) {
         billing = {
-          address1: safeStr(row.billing_address1, ship.address1),
-          city: safeStr(row.billing_city, ship.city),
-          province: safeStr(row.billing_state, ship.province),
-          country: safeStr(row.billing_country, ship.country),
-          country_code: safeStr(row.billing_country_code, ship.country_code),
-          zip: safeStr(row.billing_zip, ship.zip),
-          first_name: customer.first_name,
-          last_name: customer.last_name,
-          email: customer.email
+          address1:    safeStr(row.billing_address1, ship.address1),
+          address2:    safeStr(row.billing_address2, ship.address2),
+          city:        safeStr(row.billing_city, ship.city),
+          province:    safeStr(row.billing_state, ship.province),
+          country:     safeStr(row.billing_country, ship.country),
+          country_code:safeStr(row.billing_country_code, ship.country_code),
+          zip:         safeStr(row.billing_zip, ship.zip),
+          first_name:  customer.first_name,
+          last_name:   customer.last_name,
+          email:       customer.email,
+          phone:       customer.phone,
+          company:     safeStr(row.billing_company, ship.company)
         };
-        if (row.billing_address2) billing.address2 = safeStr(row.billing_address2);
-        if (row.billing_company) billing.company = safeStr(row.billing_company);
       }
 
-      // Line items
       const line_items = [];
       for (let j = 1; j <= 5; j++) {
-        const name  = safeStr(row[`product_${j}_name`]);
+        const title = safeStr(row[`product_${j}_name`]);
         const price = parseFloat(safeStr(row[`product_${j}_price`], '0'));
-        const qty   = parseInt(safeStr(row[`product_${j}_quantity`], '1'));
-        if (name && price) {
+        const qty   = parseInt(safeStr(row[`product_${j}_quantity`], '1'), 10);
+        if (title && price) {
           const item = {
-            title: name,
+            title,
             price: price.toFixed(2),
             quantity: qty,
             requires_shipping: true,
-            taxable: true
+            taxable: true,
+            sku: safeStr(row[`product_${j}_sku`], undefined)
           };
-          if (row[`product_${j}_sku`]) item.sku = safeStr(row[`product_${j}_sku`]);
           line_items.push(item);
         }
       }
       if (!line_items.length) {
-        failed.push({ row: i+1, error: 'No valid products' });
+        failed.push({ row: i+1, error: 'No products', email: customer.email });
         continue;
       }
 
-      // Payment status mapping
-      const pm = safeStr(row.payment_method,'COD').toUpperCase();
+      // map payment method to financial_status
+      const pm = safeStr(row.payment_method, 'COD').toUpperCase();
       let financial_status = 'unpaid';
-      if (['PAID','ONLINE','CREDIT_CARD','PAYPAL'].includes(pm)) financial_status='paid';
-      else if (['PENDING','PROCESSING'].includes(pm)) financial_status='pending';
-      else if (['AUTHORIZED','AUTH'].includes(pm)) financial_status='authorized';
+      if (['PAID','ONLINE','CREDIT_CARD','PAYPAL'].includes(pm)) financial_status = 'paid';
+      else if (['PENDING','PROCESSING'].includes(pm)) financial_status = 'pending';
+      else if (['AUTHORIZED','AUTH'].includes(pm)) financial_status = 'authorized';
 
-      const ship_price = parseFloat(safeStr(row.shipping_price,'0')) || 0;
+      const ship_price = parseFloat(safeStr(row.shipping_price,'0'));
       const note       = safeStr(row.order_note);
       const currency   = safeStr(row.currency,'USD');
 
-      // Build the final payload
-      const orderData = {
+      const order = {
         order: {
           customer,
           shipping_address: ship,
@@ -160,58 +158,41 @@ app.post('/process', async (req, res) => {
             total_shipping_price: ship_price.toFixed(2),
             taxes_included: false,
             current_extra_total_discounts: '0.00'
-          }
+          },
+          ...(note && { order_note: note }),
+          ...(ship_price > 0 && {
+            shipping_line: {
+              title: 'Standard Shipping',
+              price: ship_price.toFixed(2),
+              code: 'STANDARD'
+            }
+          })
         }
       };
-      if (note) orderData.order.order_note = note;
-      if (ship_price > 0) {
-        orderData.order.shipping_line = {
-          title: 'Standard Shipping',
-          price: ship_price.toFixed(2),
-          code: 'STANDARD'
-        };
-      }
 
       try {
-        const apiRes = await client.post('/orders.json', orderData);
-        const ord    = apiRes.data.order || {};
-        successful.push({
-          row: i+1,
-          order_id: ord.id,
-          order_number: ord.name||ord.id,
-          customer_email: customer.email
-        });
+        const apiRes = await client.post('/orders.json', order);
+        const o = apiRes.data.order || {};
+        successful.push({ row: i+1, order_number: o.name || o.id, email: customer.email });
       } catch (err) {
-        failed.push({
-          row: i+1,
-          error: err.response?.data || err.message,
-          customer_email: customer.email
-        });
+        failed.push({ row: i+1, error: err.response?.data || err.message, email: customer.email });
       }
 
-      // Throttle
+      // throttle half‑second
       await new Promise(r => setTimeout(r, 500));
     }
 
-    // Prepare summary
     const summary = {
-      total: records.length,
+      total:  records.length,
       success: successful.length,
-      failed: failed.length,
-      rate: ((successful.length/records.length)*100).toFixed(1)
+      failed:  failed.length,
+      rate:   ((successful.length/records.length)*100).toFixed(1)
     };
 
-    // Render results
-    res.render('index', { 
-      error: null, 
-      summary, 
-      successful, 
-      failed 
-    });
-
+    res.render('index', { error: null, summary, successful, failed });
   } catch (e) {
     console.error(e);
-    res.render('index', { error: e.message, summary: null });
+    res.render('index', { error: e.message, summary: null, successful: [], failed: [] });
   }
 });
 
